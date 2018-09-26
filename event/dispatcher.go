@@ -3,10 +3,9 @@ package event
 import (
 	"sync"
 
-	"github.com/richardwilkes/toolbox/taskqueue"
-
 	"github.com/richardwilkes/toolbox/errs"
 	"github.com/richardwilkes/toolbox/log/logadapter"
+	"github.com/richardwilkes/toolbox/taskqueue"
 )
 
 // Listener defines the method necessary to listen for events.
