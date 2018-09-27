@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/richardwilkes/ion/event"
+	"github.com/richardwilkes/ion/provisioner"
 	"github.com/richardwilkes/toolbox/atexit"
 	"github.com/richardwilkes/toolbox/errs"
 	"github.com/richardwilkes/toolbox/log/logadapter"
@@ -21,28 +22,38 @@ import (
 
 // Ion provides communication with Electron.
 type Ion struct {
-	basePath     string
-	logger       logadapter.Logger
-	dispatcher   *event.Dispatcher
-	tcpListener  net.Listener
-	conn         net.Conn
-	ctx          context.Context
-	cancel       context.CancelFunc
-	shutdownOnce sync.Once
+	provisioningPath                   string
+	logger                             logadapter.Logger
+	additionalElectronArchiveRetriever provisioner.ArchiveRetriever
+	dispatcher                         *event.Dispatcher
+	tcpListener                        net.Listener
+	conn                               net.Conn
+	ctx                                context.Context
+	cancel                             context.CancelFunc
+	shutdownOnce                       sync.Once
 }
 
 // New creates a new Ion instance, launching Electron.
 func New(options ...Option) (*Ion, error) {
 	var err error
 	ion := &Ion{}
-	if err = ion.determineBasePath(); err != nil {
-		return nil, err
-	}
 	for _, option := range options {
 		option(ion)
 	}
+	if ion.provisioningPath == "" {
+		if ion.provisioningPath, err = os.Executable(); err != nil {
+			return nil, errs.Wrap(err)
+		}
+		ion.provisioningPath = filepath.Dir(ion.provisioningPath)
+	}
+	if ion.provisioningPath, err = filepath.Abs(ion.provisioningPath); err != nil {
+		return nil, errs.Wrap(err)
+	}
 	if ion.logger == nil {
 		ion.logger = &logadapter.Discarder{}
+	}
+	if err = provisioner.ProvisionElectron(ion.provisioningPath, ion.additionalElectronArchiveRetriever); err != nil {
+		return nil, err
 	}
 	ion.dispatcher = event.NewDispatcher(ion.logger)
 	ion.ctx, ion.cancel = context.WithCancel(context.Background())
@@ -55,19 +66,6 @@ func New(options ...Option) (*Ion, error) {
 	ion.startElectron()
 	atexit.Register(ion.Shutdown)
 	return ion, nil
-}
-
-func (ion *Ion) determineBasePath() error {
-	basePath, err := os.Executable()
-	if err != nil {
-		return errs.Wrap(err)
-	}
-	basePath = filepath.Dir(basePath)
-	if basePath, err = filepath.Abs(basePath); err != nil {
-		return errs.Wrap(err)
-	}
-	ion.basePath = basePath
-	return nil
 }
 
 func (ion *Ion) timeoutWaitingForElectron(accepted chan bool) {
