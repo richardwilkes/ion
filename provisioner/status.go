@@ -6,27 +6,23 @@ import (
 	"github.com/richardwilkes/toolbox/xio/fs"
 )
 
-// Status holds information about the current provisioning.
-type Status struct {
+type status struct {
 	Version string
 	CRC64   uint64
 }
 
-// StatusPath returns the path to the provisioning status file.
-func StatusPath(basePath string) string {
-	return filepath.Join(basePath, "ion_provisioning.yaml")
+func statusPath(rootPath string) string {
+	return filepath.Join(rootPath, "ion_provisioning.yaml")
 }
 
-// LoadStatus loads the provisioning status file.
-func LoadStatus(basePath string) *Status {
-	var s Status
-	if err := fs.LoadYAML(StatusPath(basePath), &s); err != nil {
-		return &Status{}
+func loadStatus(rootPath string) *status {
+	var s status
+	if err := fs.LoadYAML(statusPath(rootPath), &s); err != nil {
+		return &status{}
 	}
 	return &s
 }
 
-// Save the provisioning status file.
-func (s *Status) Save(basePath string) error {
-	return fs.SaveYAML(StatusPath(basePath), s)
+func (s *status) save(rootPath string) error {
+	return fs.SaveYAML(statusPath(rootPath), s)
 }
