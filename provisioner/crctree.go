@@ -6,13 +6,14 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/richardwilkes/toolbox/cmdline"
 	"github.com/richardwilkes/toolbox/errs"
 )
 
 var crc64Table = crc64.MakeTable(crc64.ECMA)
 
 func crcTree(rootPath string) (uint64, error) {
-	var crc uint64
+	crc := crc64.Update(0, crc64Table, []byte(cmdline.AppCmdName))
 	statusPath := statusPath(rootPath)
 	if walkErr := filepath.Walk(rootPath, func(path string, info os.FileInfo, e error) error {
 		if e != nil {

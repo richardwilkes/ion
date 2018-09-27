@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,13 +20,16 @@ import (
 	"github.com/richardwilkes/toolbox/atexit"
 	"github.com/richardwilkes/toolbox/errs"
 	"github.com/richardwilkes/toolbox/log/logadapter"
+	"github.com/richardwilkes/toolbox/xio"
 )
 
 // Ion provides communication with Electron.
 type Ion struct {
 	provisioningPath                   string
+	macOSAppBundleID                   string
 	logger                             logadapter.Logger
 	additionalElectronArchiveRetriever provisioner.ArchiveRetriever
+	iconFileSystem                     http.FileSystem
 	dispatcher                         *event.Dispatcher
 	tcpListener                        net.Listener
 	ctx                                context.Context
@@ -48,7 +53,7 @@ func New(options ...Option) (*Ion, error) {
 		if ion.provisioningPath, err = os.Executable(); err != nil {
 			return nil, errs.Wrap(err)
 		}
-		ion.provisioningPath = filepath.Dir(ion.provisioningPath)
+		ion.provisioningPath = filepath.Join(filepath.Dir(ion.provisioningPath), "support")
 	}
 	if ion.provisioningPath, err = filepath.Abs(ion.provisioningPath); err != nil {
 		return nil, errs.Wrap(err)
@@ -56,7 +61,7 @@ func New(options ...Option) (*Ion, error) {
 	if ion.logger == nil {
 		ion.logger = &logadapter.Discarder{}
 	}
-	if err = provisioner.ProvisionElectron(ion.provisioningPath, ion.additionalElectronArchiveRetriever); err != nil {
+	if err = provisioner.ProvisionElectron(ion.provisioningPath, ion.macOSAppBundleID, ion.iconFileSystem, ion.additionalElectronArchiveRetriever); err != nil {
 		return nil, err
 	}
 	ion.dispatcher = event.NewDispatcher(ion.logger)
@@ -74,12 +79,30 @@ func (ion *Ion) Start() error {
 	accepted := make(chan bool)
 	go ion.timeoutWaitingForElectron(accepted)
 	go ion.waitForElectron(accepted)
-	ion.startElectron()
+	if err = ion.startElectron(ion.tcpListener.Addr().String()); err != nil {
+		ion.cancel()
+		return errs.Wrap(err)
+	}
 	return nil
 }
 
-func (ion *Ion) startElectron() {
-	// RAW: Implement
+func (ion *Ion) startElectron(addr string) error {
+	cmd := exec.Command(provisioner.ElectronExecutablePath(ion.provisioningPath), filepath.Join(ion.provisioningPath, "main.js"), addr)
+	cmd.Stderr = xio.NewLineWriter(func(data []byte) { ion.logger.Error(provisioner.ElectronName+" stderr: ", string(data)) })
+	cmd.Stdout = xio.NewLineWriter(func(data []byte) { ion.logger.Info(provisioner.ElectronName+" stdout: ", string(data)) })
+	if err := cmd.Start(); err != nil {
+		return errs.Wrap(err)
+	}
+	go ion.watchElectron(cmd)
+	return nil
+}
+
+func (ion *Ion) watchElectron(cmd *exec.Cmd) {
+	if err := cmd.Wait(); err != nil {
+		ion.logger.Error(err)
+	}
+	ion.logger.Debug(provisioner.ElectronName + " stopped")
+	ion.Shutdown()
 }
 
 // Wait until Ion has shutdown. A second call to this will never return.
@@ -91,7 +114,7 @@ func (ion *Ion) timeoutWaitingForElectron(accepted chan bool) {
 	select {
 	case <-accepted:
 	case <-time.After(30 * time.Second):
-		ion.logger.Error("Timeout waiting for TCP connection from Electron")
+		ion.logger.Error("Timeout waiting for TCP connection from " + provisioner.ElectronName)
 		ion.Shutdown()
 	}
 }
@@ -117,13 +140,13 @@ func (ion *Ion) Dispatcher() *event.Dispatcher {
 	return ion.dispatcher
 }
 
-func (ion *Ion) receiver(conn net.Conn) {
-	r := bufio.NewReader(conn)
+func (ion *Ion) receiver(r io.Reader) {
+	bufferedReader := bufio.NewReader(r)
 	for {
 		if ion.ctx.Err() != nil {
 			return
 		}
-		buffer, err := r.ReadBytes('\n')
+		buffer, err := bufferedReader.ReadBytes('\n')
 		if err != nil {
 			// "wsarecv" is the error sent on Windows when the client closes its connection
 			if err == io.EOF || strings.Contains(strings.ToLower(err.Error()), "wsarecv:") {
