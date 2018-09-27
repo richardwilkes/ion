@@ -27,16 +27,20 @@ type Ion struct {
 	additionalElectronArchiveRetriever provisioner.ArchiveRetriever
 	dispatcher                         *event.Dispatcher
 	tcpListener                        net.Listener
-	conn                               net.Conn
 	ctx                                context.Context
 	cancel                             context.CancelFunc
+	shutdownChan                       chan bool
 	shutdownOnce                       sync.Once
+	connLock                           sync.RWMutex
+	conn                               net.Conn
 }
 
 // New creates a new Ion instance, launching Electron.
 func New(options ...Option) (*Ion, error) {
 	var err error
-	ion := &Ion{}
+	ion := &Ion{
+		shutdownChan: make(chan bool),
+	}
 	for _, option := range options {
 		option(ion)
 	}
@@ -56,16 +60,31 @@ func New(options ...Option) (*Ion, error) {
 		return nil, err
 	}
 	ion.dispatcher = event.NewDispatcher(ion.logger)
+	atexit.Register(ion.Shutdown)
+	return ion, nil
+}
+
+// Start Ion.
+func (ion *Ion) Start() error {
 	ion.ctx, ion.cancel = context.WithCancel(context.Background())
+	var err error
 	if ion.tcpListener, err = net.Listen("tcp", "127.0.0.1:"); err != nil {
-		return nil, errs.Wrap(err)
+		return errs.Wrap(err)
 	}
 	accepted := make(chan bool)
 	go ion.timeoutWaitingForElectron(accepted)
 	go ion.waitForElectron(accepted)
 	ion.startElectron()
-	atexit.Register(ion.Shutdown)
-	return ion, nil
+	return nil
+}
+
+func (ion *Ion) startElectron() {
+	// RAW: Implement
+}
+
+// Wait until Ion has shutdown. A second call to this will never return.
+func (ion *Ion) Wait() {
+	<-ion.shutdownChan
 }
 
 func (ion *Ion) timeoutWaitingForElectron(accepted chan bool) {
@@ -85,18 +104,21 @@ func (ion *Ion) waitForElectron(accepted chan bool) {
 		return
 	}
 	accepted <- true
+	ion.connLock.Lock()
 	ion.conn = conn
+	ion.connLock.Unlock()
 	ion.close(ion.tcpListener)
 	ion.tcpListener = nil
-	go ion.receiver()
+	go ion.receiver(conn)
 }
 
-func (ion *Ion) startElectron() {
-	// RAW: Implement
+// Dispatcher returns the dispatcher.
+func (ion *Ion) Dispatcher() *event.Dispatcher {
+	return ion.dispatcher
 }
 
-func (ion *Ion) receiver() {
-	r := bufio.NewReader(ion.conn)
+func (ion *Ion) receiver(conn net.Conn) {
+	r := bufio.NewReader(conn)
 	for {
 		if ion.ctx.Err() != nil {
 			return
@@ -124,7 +146,10 @@ func (ion *Ion) send(data interface{}) error {
 	if err != nil {
 		return errs.Wrap(err)
 	}
-	if _, err = ion.conn.Write(append(d, '\n')); err != nil {
+	d = append(d, '\n')
+	ion.connLock.RLock()
+	defer ion.connLock.RUnlock()
+	if _, err = ion.conn.Write(d); err != nil {
 		return errs.Wrap(err)
 	}
 	return nil
@@ -139,8 +164,13 @@ func (ion *Ion) Shutdown() {
 func (ion *Ion) shutdown() {
 	ion.dispatcher.Dispatch(&event.Event{Name: event.AppShutdown})
 	ion.dispatcher.Shutdown()
-	ion.close(ion.conn)
-	ion.conn = nil
+	ion.connLock.Lock()
+	defer ion.connLock.Unlock()
+	if ion.conn != nil {
+		ion.close(ion.conn)
+		ion.conn = nil
+	}
+	close(ion.shutdownChan)
 }
 
 func (ion *Ion) close(closer io.Closer) {
