@@ -8,11 +8,6 @@ import (
 	"github.com/richardwilkes/toolbox/taskqueue"
 )
 
-// Listener defines the method necessary to listen for events.
-type Listener interface {
-	EventFired(event *Event)
-}
-
 // Dispatcher provides dispatching of events coming from Electron.
 type Dispatcher struct {
 	logger    logadapter.ErrorLogger
