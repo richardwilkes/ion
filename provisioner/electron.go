@@ -11,7 +11,6 @@ import (
 
 	"github.com/richardwilkes/toolbox/cmdline"
 	"github.com/richardwilkes/toolbox/errs"
-	"github.com/richardwilkes/toolbox/log/jot"
 	"github.com/richardwilkes/toolbox/xio"
 )
 
@@ -112,12 +111,9 @@ func electronDeploymentFinalizer(dstRootPath, macOSAppBundleID string, iconFS ht
 }
 
 func electronUpdateIcon(dstRootPath string, iconFS http.FileSystem) error {
-	jot.Debug("electronUpdateIcon: ", dstRootPath)
 	if iconFS != nil {
 		if runtime.GOOS == "darwin" {
-			jot.Debug("looking for /app.icns")
 			if f, err := iconFS.Open("/app.icns"); err == nil {
-				jot.Debug("found")
 				defer xio.CloseIgnoringErrors(f)
 				data, err := ioutil.ReadAll(f)
 				if err != nil {
