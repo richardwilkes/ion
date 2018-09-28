@@ -25,19 +25,19 @@ import (
 
 // Ion provides communication with Electron.
 type Ion struct {
-	provisioningPath                   string
-	macOSAppBundleID                   string
-	logger                             logadapter.Logger
-	additionalElectronArchiveRetriever provisioner.ArchiveRetriever
-	iconFileSystem                     http.FileSystem
-	dispatcher                         *event.Dispatcher
-	tcpListener                        net.Listener
-	ctx                                context.Context
-	cancel                             context.CancelFunc
-	shutdownChan                       chan bool
-	shutdownOnce                       sync.Once
-	connLock                           sync.RWMutex
-	conn                               net.Conn
+	provisioningPath         string
+	macOSAppBundleID         string
+	logger                   logadapter.Logger
+	electronArchiveRetriever provisioner.ArchiveRetriever
+	iconFileSystem           http.FileSystem
+	dispatcher               *event.Dispatcher
+	tcpListener              net.Listener
+	ctx                      context.Context
+	cancel                   context.CancelFunc
+	shutdownChan             chan bool
+	shutdownOnce             sync.Once
+	connLock                 sync.RWMutex
+	conn                     net.Conn
 }
 
 // New creates a new Ion instance, launching Electron.
@@ -61,7 +61,7 @@ func New(options ...Option) (*Ion, error) {
 	if ion.logger == nil {
 		ion.logger = &logadapter.Discarder{}
 	}
-	if err = provisioner.ProvisionElectron(ion.provisioningPath, ion.macOSAppBundleID, ion.iconFileSystem, ion.additionalElectronArchiveRetriever); err != nil {
+	if err = provisioner.ProvisionElectron(ion.provisioningPath, ion.macOSAppBundleID, ion.iconFileSystem, ion.electronArchiveRetriever); err != nil {
 		return nil, err
 	}
 	ion.dispatcher = event.NewDispatcher(ion.logger)
@@ -99,7 +99,7 @@ func (ion *Ion) startElectron(addr string) error {
 
 func (ion *Ion) watchElectron(cmd *exec.Cmd) {
 	if err := cmd.Wait(); err != nil {
-		ion.logger.Error(err)
+		ion.logger.Errorf("%s: %v", provisioner.ElectronName, err)
 	}
 	ion.logger.Debug(provisioner.ElectronName + " stopped")
 	ion.Shutdown()

@@ -21,10 +21,10 @@ func MacOSAppBundleID(id string) Option {
 	return func(ion *Ion) { ion.macOSAppBundleID = id }
 }
 
-// AdditionalElectronArchiveRetriever sets an ArchiveRetriever to use for
-// Electron before the default one.
-func AdditionalElectronArchiveRetriever(retriever provisioner.ArchiveRetriever) Option {
-	return func(ion *Ion) { ion.additionalElectronArchiveRetriever = retriever }
+// ElectronArchiveRetriever sets an ArchiveRetriever to use for Electron
+// before the default one.
+func ElectronArchiveRetriever(retriever provisioner.ArchiveRetriever) Option {
+	return func(ion *Ion) { ion.electronArchiveRetriever = retriever }
 }
 
 // ProvisioningPath sets the provisioning path. The default varies by
