@@ -10,12 +10,12 @@ import (
 )
 
 // DeploymentFinalizer is used to make any final adjustments to files deployed
-// from an archive before recording their state.
+// during provisioning before recording their state.
 type DeploymentFinalizer func(dstRootPath string) error
 
-// Provision attempts to deploy an archive of files onto the file system.
+// FromArchive attempts to deploy an archive of files onto the file system.
 // 'finalizer' may be nil.
-func Provision(version, dstRootPath string, retriever ArchiveRetriever, finalizer DeploymentFinalizer) error {
+func FromArchive(version, dstRootPath string, retriever ArchiveRetriever, finalizer DeploymentFinalizer) error {
 	var crc uint64
 	var err error
 	s := loadStatus(dstRootPath)

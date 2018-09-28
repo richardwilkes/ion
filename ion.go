@@ -23,6 +23,10 @@ import (
 	"github.com/richardwilkes/toolbox/xio"
 )
 
+const ionFSVersion = "1"
+
+//go:generate mkembeddedfs --no-modtime --output ionfs_gen.go --pkg ion --name ionfs --strip ionfs ionfs
+
 // Ion provides communication with Electron.
 type Ion struct {
 	provisioningPath         string
@@ -64,6 +68,9 @@ func New(options ...Option) (*Ion, error) {
 	if err = provisioner.ProvisionElectron(ion.provisioningPath, ion.macOSAppBundleID, ion.iconFileSystem, ion.electronArchiveRetriever); err != nil {
 		return nil, err
 	}
+	if err = provisioner.FromFileSystem(ionFSVersion, "/", filepath.Join(ion.provisioningPath, "ion"), ionfs.FileSystem("ionfs"), nil); err != nil {
+		return nil, err
+	}
 	ion.dispatcher = event.NewDispatcher(ion.logger)
 	atexit.Register(ion.Shutdown)
 	return ion, nil
@@ -87,9 +94,9 @@ func (ion *Ion) Start() error {
 }
 
 func (ion *Ion) startElectron(addr string) error {
-	cmd := exec.Command(provisioner.ElectronExecutablePath(ion.provisioningPath), filepath.Join(ion.provisioningPath, "main.js"), addr)
-	cmd.Stderr = xio.NewLineWriter(func(data []byte) { ion.logger.Error(provisioner.ElectronName+" stderr: ", string(data)) })
-	cmd.Stdout = xio.NewLineWriter(func(data []byte) { ion.logger.Info(provisioner.ElectronName+" stdout: ", string(data)) })
+	cmd := exec.CommandContext(ion.ctx, provisioner.ElectronExecutablePath(ion.provisioningPath), filepath.Join(ion.provisioningPath, "ion/ion.js"), addr)
+	cmd.Stderr = xio.NewLineWriter(func(data []byte) { ion.logger.Error(provisioner.ElectronName, " stderr: ", string(data)) })
+	cmd.Stdout = xio.NewLineWriter(func(data []byte) { ion.logger.Info(provisioner.ElectronName, " stdout: ", string(data)) })
 	if err := cmd.Start(); err != nil {
 		return errs.Wrap(err)
 	}
@@ -187,6 +194,9 @@ func (ion *Ion) Shutdown() {
 func (ion *Ion) shutdown() {
 	ion.dispatcher.Dispatch(&event.Event{Name: event.AppShutdown})
 	ion.dispatcher.Shutdown()
+	if ion.cancel != nil {
+		ion.cancel()
+	}
 	ion.connLock.Lock()
 	defer ion.connLock.Unlock()
 	if ion.conn != nil {

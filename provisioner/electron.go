@@ -95,7 +95,7 @@ func ProvisionElectron(rootPath, macOSAppBundleID string, iconFS http.FileSystem
 	if macOSAppBundleID == "" {
 		macOSAppBundleID = electronBundleID // Default back to no change
 	}
-	return Provision(ElectronVersion, ElectronPath(rootPath), r, func(dstRootPath string) error {
+	return FromArchive(ElectronVersion, ElectronPath(rootPath), r, func(dstRootPath string) error {
 		return electronDeploymentFinalizer(dstRootPath, macOSAppBundleID, iconFS)
 	})
 }
